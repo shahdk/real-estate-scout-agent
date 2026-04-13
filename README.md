@@ -1,4 +1,4 @@
-# Real Estate Agent v2 — Architecture
+# Real Estate Scouting Agent
 
 A desktop application that scouts Redfin listings against user preferences, then runs a local vision LLM (Gemma via Ollama) to inspect property photos for condition issues plus Vastu / Feng Shui assessment. Everything runs in a single Qt window: the embedded Chromium browser drives Redfin on the left, a live HTML dashboard streams results on the right.
 
