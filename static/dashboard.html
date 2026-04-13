@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Analysis Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #242836;
+    --border: #2e3345;
+    --text: #e4e6ef;
+    --text-muted: #8b8fa3;
+    --accent: #6c8cff;
+    --green: #34d399;
+    --yellow: #fbbf24;
+    --orange: #fb923c;
+    --red: #f87171;
+    --critical: #ef4444;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ---- Header ---- */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  header h1 { font-size: 15px; font-weight: 600; }
+  header h1 span { color: var(--accent); }
+  .controls { display:flex; align-items:center; gap:8px; }
+  .status-badge {
+    display:flex; align-items:center; gap:5px;
+    font-size: 12px; color: var(--text-muted);
+    background: var(--surface2); padding: 5px 12px; border-radius: 16px;
+  }
+  .status-dot {
+    width:7px; height:7px; border-radius:50%;
+    background: var(--yellow); animation: pulse 1.5s infinite;
+  }
+  .status-dot.running { background: var(--green); }
+  .status-dot.paused  { background: var(--yellow); }
+  .status-dot.killed  { background: var(--red); }
+  .status-dot.done    { background: var(--accent); animation:none; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  .btn {
+    padding:5px 14px; border:none; border-radius:6px;
+    font-size:12px; font-weight:500; cursor:pointer; transition:.15s;
+  }
+  .btn-pause { background:var(--surface2); color:var(--text); border:1px solid var(--border); }
+  .btn-pause:hover { background:var(--border); }
+  .btn-kill { background:var(--red); color:#fff; }
+  .btn-kill:hover { background:#dc2626; }
+  .btn:disabled { opacity:.4; cursor:default; }
+
+  /* ---- Main ---- */
+  main { flex:1; overflow-y:auto; padding:12px 16px; }
+
+  /* ---- Stats ---- */
+  .stats-bar { display:flex; gap:10px; margin-bottom:12px; }
+  .stat-card {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:8px; padding:10px 14px; flex:1; text-align:center;
+  }
+  .stat-card .num { font-size:22px; font-weight:700; color:var(--accent); }
+  .stat-card .label {
+    font-size:10px; color:var(--text-muted); margin-top:2px;
+    text-transform:uppercase; letter-spacing:.5px;
+  }
+
+  /* ---- Log ---- */
+  #log-area {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:8px; padding:10px 14px; margin-bottom:12px;
+    max-height:100px; overflow-y:auto;
+    font-family:'SF Mono','Fira Code',monospace; font-size:11px; color:var(--text-muted);
+  }
+  .log-entry { padding:1px 0; }
+  .log-entry::before { content:'> '; color:var(--accent); }
+
+  /* ---- Listings ---- */
+  .listings-grid { display:flex; flex-direction:column; gap:12px; }
+  .listing-card {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:10px; overflow:hidden; transition:border-color .2s;
+  }
+  .listing-card:hover { border-color:var(--accent); }
+  .listing-header {
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding:12px 16px; background:var(--surface2); border-bottom:1px solid var(--border);
+    cursor:pointer; user-select:none;
+  }
+  .listing-header .toggle-icon {
+    font-size:12px; color:var(--text-muted); margin-right:6px;
+    display:inline-block; transition:transform .2s;
+  }
+  .listing-card.collapsed .toggle-icon { transform:rotate(-90deg); }
+  .listing-body { transition:max-height .3s ease; overflow:hidden; }
+  .listing-card.collapsed .listing-body { display:none; }
+  .listing-address { font-size:14px; font-weight:600; }
+  .listing-price { font-size:16px; font-weight:700; color:var(--green); }
+  .listing-details {
+    display:flex; gap:14px; padding:8px 16px;
+    font-size:12px; color:var(--text-muted); border-bottom:1px solid var(--border);
+  }
+  .listing-thumb-row {
+    display:flex; gap:3px; padding:8px 16px; overflow-x:auto;
+  }
+  .listing-thumb-row img {
+    height:60px; border-radius:4px; object-fit:cover; flex-shrink:0;
+  }
+
+  /* ---- Analysis ---- */
+  .analysis-section { padding:12px 16px; }
+  .analysis-pending {
+    color:var(--text-muted); font-size:12px; font-style:italic;
+  }
+  .analysis-loading {
+    color:var(--text-muted); font-size:12px; font-style:italic;
+  }
+  .analysis-loading::before {
+    content:''; display:inline-block; width:10px; height:10px;
+    border:2px solid var(--border); border-top-color:var(--accent);
+    border-radius:50%; animation:spin .6s linear infinite;
+    margin-right:6px; vertical-align:middle;
+  }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  .condition-badge {
+    display:inline-flex; align-items:center; gap:5px;
+    padding:3px 10px; border-radius:16px; font-size:13px; font-weight:600;
+    margin-bottom:8px;
+  }
+  .condition-badge.good { background:rgba(52,211,153,.15); color:var(--green); }
+  .condition-badge.fair { background:rgba(251,191,36,.15); color:var(--yellow); }
+  .condition-badge.poor { background:rgba(248,113,113,.15); color:var(--red); }
+
+  .analysis-summary { font-size:13px; line-height:1.5; margin-bottom:10px; }
+  .findings-list { list-style:none; }
+  .finding-item {
+    display:flex; align-items:flex-start; gap:8px;
+    padding:6px 0; border-top:1px solid var(--border); font-size:12px;
+  }
+  .severity-tag {
+    font-size:10px; font-weight:600; padding:2px 6px; border-radius:3px;
+    text-transform:uppercase; flex-shrink:0; min-width:60px; text-align:center;
+  }
+  .severity-tag.INFO     { background:rgba(108,140,255,.15); color:var(--accent); }
+  .severity-tag.MINOR    { background:rgba(52,211,153,.15);  color:var(--green); }
+  .severity-tag.MODERATE { background:rgba(251,191,36,.15);  color:var(--yellow); }
+  .severity-tag.MAJOR    { background:rgba(251,146,60,.15);  color:var(--orange); }
+  .severity-tag.CRITICAL { background:rgba(239,68,68,.15);   color:var(--critical); }
+
+  .maintenance-estimate {
+    margin-top:10px; padding:8px 12px; background:var(--surface2);
+    border-radius:6px; font-size:12px;
+  }
+  .maintenance-estimate strong { color:var(--accent); }
+
+  /* ---- Pada Grid ---- */
+  .pada-section { margin-top:10px; padding:8px 12px; background:var(--surface2); border-radius:6px; }
+  .pada-section .pada-title { font-size:12px; font-weight:600; margin-bottom:6px; }
+  .pada-grid {
+    display:grid; grid-template-columns:repeat(9, 1fr); gap:2px; margin-bottom:6px;
+  }
+  .pada-cell {
+    text-align:center; padding:6px 2px; border-radius:4px; font-size:9px;
+    border:1px solid var(--border);
+  }
+  .pada-cell .pada-num { font-weight:700; font-size:11px; }
+  .pada-cell .pada-name { display:block; margin-top:1px; }
+  .pada-cell.good { background:rgba(52,211,153,.12); border-color:var(--green); }
+  .pada-cell.bad  { background:rgba(248,113,113,.10); border-color:var(--red); }
+  .pada-cell.door { outline:2px solid var(--accent); outline-offset:-1px; }
+  .pada-cell.door .pada-num::after { content:' \1F6AA'; }
+  .pada-confidence { font-size:10px; color:var(--text-muted); margin-top:4px; }
+  .pada-result { font-size:12px; margin-top:4px; }
+  .pada-result.auspicious { color:var(--green); }
+  .pada-result.inauspicious { color:var(--red); }
+
+  /* Pada image overlay */
+  .pada-image-wrap {
+    position:relative; margin-bottom:8px; border-radius:6px; overflow:hidden;
+  }
+  .pada-entrance-img {
+    width:100%; display:block; border-radius:6px;
+  }
+  .pada-overlay-grid {
+    position:absolute; bottom:0; left:0; right:0; height:35%;
+    display:grid; grid-template-columns:repeat(9, 1fr); gap:1px;
+  }
+  .pada-overlay-cell {
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    font-size:9px; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.8);
+  }
+  .pada-overlay-cell.good { background:rgba(52,211,153,.35); }
+  .pada-overlay-cell.bad  { background:rgba(248,113,113,.30); }
+  .pada-overlay-cell.door {
+    outline:2px solid var(--accent); outline-offset:-1px;
+    background:rgba(108,140,255,.40);
+  }
+  .pada-overlay-cell .pada-num { font-weight:700; font-size:12px; }
+  .pada-overlay-cell .pada-name { font-size:8px; }
+  .pada-dir-labels {
+    position:absolute; bottom:2px; left:0; right:0;
+    display:flex; justify-content:space-between; padding:0 4px;
+    pointer-events:none;
+  }
+  .pada-dir-label {
+    font-size:10px; font-weight:700; color:#fff;
+    text-shadow:0 1px 4px rgba(0,0,0,.9);
+    background:rgba(0,0,0,.4); padding:1px 5px; border-radius:3px;
+  }
+
+  .empty-state {
+    text-align:center; padding:40px 16px; color:var(--text-muted);
+  }
+  .empty-state p { font-size:13px; }
+
+  /* ---- Preferences panel ---- */
+  .prefs-panel {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:8px; margin-bottom:12px; overflow:hidden;
+  }
+  .prefs-header {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:8px 14px; background:var(--surface2); cursor:pointer;
+    user-select:none; border-bottom:1px solid var(--border);
+  }
+  .prefs-header h3 { font-size:13px; font-weight:600; }
+  .prefs-header .toggle { font-size:11px; color:var(--text-muted); }
+  .prefs-body { padding:12px 14px; display:none; }
+  .prefs-body.open { display:block; }
+  .prefs-row { display:flex; gap:10px; margin-bottom:8px; flex-wrap:wrap; }
+  .prefs-field { flex:1; min-width:100px; }
+  .prefs-field label {
+    display:block; font-size:10px; color:var(--text-muted);
+    text-transform:uppercase; letter-spacing:.5px; margin-bottom:3px;
+  }
+  .prefs-field input, .prefs-field textarea, .prefs-field select {
+    width:100%; padding:5px 8px; background:var(--surface2);
+    border:1px solid var(--border); border-radius:4px;
+    color:var(--text); font-size:12px; font-family:inherit;
+  }
+  .prefs-field textarea { resize:vertical; min-height:40px; }
+  .prefs-field input:focus, .prefs-field textarea:focus {
+    outline:none; border-color:var(--accent);
+  }
+  .prefs-actions { display:flex; gap:8px; margin-top:8px; }
+  .btn-save { background:var(--accent); color:#fff; }
+  .btn-save:hover { background:#5a7ae6; }
+  .prefs-saved { font-size:11px; color:var(--green); margin-left:8px; display:none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span>RE Agent</span> v2</h1>
+  <div class="controls">
+    <div class="status-badge">
+      <div class="status-dot" id="status-dot"></div>
+      <span id="status-text">Starting...</span>
+    </div>
+    <button class="btn btn-pause" id="btn-pause" onclick="onPause()">Pause</button>
+    <button class="btn btn-kill" id="btn-kill" onclick="onKill()">Kill</button>
+  </div>
+</header>
+
+<main>
+  <div class="stats-bar">
+    <div class="stat-card">
+      <div class="num" id="stat-found">0</div>
+      <div class="label">Found</div>
+    </div>
+    <div class="stat-card">
+      <div class="num" id="stat-analyzed">0</div>
+      <div class="label">Analyzed</div>
+    </div>
+    <div class="stat-card">
+      <div class="num" id="stat-avg-score">&mdash;</div>
+      <div class="label">Avg Score</div>
+    </div>
+  </div>
+
+  <div class="prefs-panel">
+    <div class="prefs-header" onclick="togglePrefs()">
+      <h3>Preferences</h3>
+      <span class="toggle" id="prefs-toggle">&#9660; Show</span>
+    </div>
+    <div class="prefs-body" id="prefs-body">
+      <div class="prefs-row">
+        <div class="prefs-field">
+          <label>Location</label>
+          <input type="text" id="pref-location" placeholder="Carmel, IN">
+        </div>
+      </div>
+      <div class="prefs-row">
+        <div class="prefs-field">
+          <label>Min Price ($)</label>
+          <input type="number" id="pref-min-price" placeholder="350000">
+        </div>
+        <div class="prefs-field">
+          <label>Max Price ($)</label>
+          <input type="number" id="pref-max-price" placeholder="1500000">
+        </div>
+      </div>
+      <div class="prefs-row">
+        <div class="prefs-field">
+          <label>Min Beds</label>
+          <input type="number" id="pref-beds" placeholder="4">
+        </div>
+        <div class="prefs-field">
+          <label>Min Baths</label>
+          <input type="number" id="pref-baths" placeholder="3">
+        </div>
+        <div class="prefs-field">
+          <label>Min Sqft</label>
+          <input type="number" id="pref-sqft" placeholder="3000">
+        </div>
+      </div>
+      <div class="prefs-row">
+        <div class="prefs-field">
+          <label>Property Types (comma-separated)</label>
+          <input type="text" id="pref-types" placeholder="house, townhouse">
+        </div>
+        <div class="prefs-field">
+          <label>Include Pending</label>
+          <select id="pref-pending">
+            <option value="false">No</option>
+            <option value="true">Yes</option>
+          </select>
+        </div>
+      </div>
+      <div class="prefs-row">
+        <div class="prefs-field">
+          <label>Must Haves (one per line)</label>
+          <textarea id="pref-must-haves" rows="2"></textarea>
+        </div>
+      </div>
+      <div class="prefs-row">
+        <div class="prefs-field">
+          <label>Neighborhood Notes</label>
+          <textarea id="pref-neighborhood" rows="2"></textarea>
+        </div>
+      </div>
+      <div class="prefs-actions">
+        <button class="btn btn-save" onclick="savePrefs()">Save Preferences</button>
+        <span class="prefs-saved" id="prefs-saved">Saved!</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="log-area">
+    <div class="log-entry">Dashboard ready.</div>
+  </div>
+
+  <div class="listings-grid" id="listings-grid">
+    <div class="empty-state" id="empty-state">
+      <p>Waiting for listings...</p>
+    </div>
+  </div>
+</main>
+
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<script>
+/* ---- Bridge to Python (via QWebChannel) ---- */
+var bridge = null;
+document.addEventListener("DOMContentLoaded", function() {
+  if (typeof qt !== 'undefined' && qt.webChannelTransport) {
+    new QWebChannel(qt.webChannelTransport, function(channel) {
+      bridge = channel.objects.bridge;
+    });
+  }
+});
+
+function onKill()  { if (bridge) bridge.kill();  }
+function onPause() { if (bridge) bridge.togglePause(); }
+
+/* ---- Preferences ---- */
+function togglePrefs() {
+  var body = document.getElementById("prefs-body");
+  var toggle = document.getElementById("prefs-toggle");
+  var open = body.classList.toggle("open");
+  toggle.innerHTML = open ? '&#9650; Hide' : '&#9660; Show';
+}
+
+function loadPrefs(prefs) {
+  document.getElementById("pref-location").value = (prefs.locations || [""])[0];
+  document.getElementById("pref-min-price").value = (prefs.budget || {}).min || "";
+  document.getElementById("pref-max-price").value = (prefs.budget || {}).max || "";
+  document.getElementById("pref-beds").value = prefs.bedrooms_min || "";
+  document.getElementById("pref-baths").value = prefs.bathrooms_min || "";
+  document.getElementById("pref-sqft").value = prefs.sqft_min || "";
+  document.getElementById("pref-types").value = (prefs.property_types || []).join(", ");
+  document.getElementById("pref-pending").value = prefs.include_pending ? "true" : "false";
+  document.getElementById("pref-must-haves").value = (prefs.must_haves || []).join("\n");
+  document.getElementById("pref-neighborhood").value = prefs.neighborhood_notes || "";
+}
+
+function savePrefs() {
+  var types = document.getElementById("pref-types").value
+    .split(",").map(function(s) { return s.trim(); }).filter(function(s) { return s; });
+  var mustHaves = document.getElementById("pref-must-haves").value
+    .split("\n").map(function(s) { return s.trim(); }).filter(function(s) { return s; });
+  var prefs = {
+    locations: [document.getElementById("pref-location").value],
+    budget: {
+      min: parseInt(document.getElementById("pref-min-price").value) || 0,
+      max: parseInt(document.getElementById("pref-max-price").value) || 0
+    },
+    bedrooms_min: parseInt(document.getElementById("pref-beds").value) || 0,
+    bathrooms_min: parseInt(document.getElementById("pref-baths").value) || 0,
+    sqft_min: parseInt(document.getElementById("pref-sqft").value) || 0,
+    property_types: types,
+    include_pending: document.getElementById("pref-pending").value === "true",
+    must_haves: mustHaves,
+    neighborhood_notes: document.getElementById("pref-neighborhood").value
+  };
+  if (bridge) bridge.savePrefs(JSON.stringify(prefs));
+  var saved = document.getElementById("prefs-saved");
+  saved.style.display = "inline";
+  setTimeout(function() { saved.style.display = "none"; }, 2000);
+}
+
+function toggleCard(headerEl) {
+  var card = headerEl.closest(".listing-card");
+  if (card) card.classList.toggle("collapsed");
+}
+
+/* ---- Scores tracking ---- */
+var _scores = [];
+var _analyzedCount = 0;
+var _listingImages = {};  /* listing_id -> image_urls array */
+
+/* ---- Functions called from Python via runJavaScript() ---- */
+
+function setStatus(msg) {
+  document.getElementById("status-text").textContent = msg;
+  var dot = document.getElementById("status-dot");
+  dot.className = "status-dot";
+  if (msg.toLowerCase().includes("paus")) dot.classList.add("paused");
+  else if (msg.toLowerCase().includes("kill") || msg.toLowerCase().includes("error"))
+    dot.classList.add("killed");
+  else if (msg.toLowerCase().includes("done") || msg.toLowerCase().includes("finish"))
+    dot.classList.add("done");
+  else dot.classList.add("running");
+}
+
+function addLog(msg) {
+  var area = document.getElementById("log-area");
+  var el = document.createElement("div");
+  el.className = "log-entry";
+  var t = new Date().toLocaleTimeString();
+  el.textContent = "[" + t + "] " + msg;
+  area.appendChild(el);
+  area.scrollTop = area.scrollHeight;
+}
+
+function addListing(data) {
+  var empty = document.getElementById("empty-state");
+  if (empty) empty.remove();
+
+  _listingImages[data.id] = data.image_urls || [];
+
+  var count = document.querySelectorAll(".listing-card").length + 1;
+  document.getElementById("stat-found").textContent = count;
+
+  var card = document.createElement("div");
+  card.className = "listing-card";
+  card.id = "listing-" + data.id;
+
+  var thumbs = (data.image_urls || []).slice(0, 6)
+    .map(function(u) { return '<img src="' + u + '" loading="lazy">'; }).join("");
+
+  card.innerHTML =
+    '<div class="listing-header" onclick="toggleCard(this)">' +
+      '<div>' +
+        '<div class="listing-address"><span class="toggle-icon">&#9660;</span>' +
+          (data.address || "Address unavailable") + '</div>' +
+      '</div>' +
+      '<div class="listing-price">' + (data.price || "") + '</div>' +
+    '</div>' +
+    '<div class="listing-body">' +
+      '<div class="listing-details">' +
+        (data.beds   ? '<span>' + data.beds   + ' beds</span>'  : '') +
+        (data.baths  ? '<span>' + data.baths  + ' baths</span>' : '') +
+        (data.sqft   ? '<span>' + data.sqft   + ' sqft</span>'  : '') +
+        (data.lot_size   ? '<span>Lot: ' + data.lot_size + '</span>' : '') +
+        (data.year_built ? '<span>Built ' + data.year_built + '</span>' : '') +
+      '</div>' +
+      (thumbs ? '<div class="listing-thumb-row">' + thumbs + '</div>' : '') +
+      '<div class="analysis-section" id="analysis-' + data.id + '">' +
+        '<div class="analysis-pending">Pending image analysis (runs after all listings collected)</div>' +
+      '</div>' +
+    '</div>';
+
+  document.getElementById("listings-grid").appendChild(card);
+}
+
+function startAnalysis(listingId) {
+  var section = document.getElementById("analysis-" + listingId);
+  if (section) {
+    section.innerHTML = '<div class="analysis-loading">Analyzing images with Claude Vision...</div>';
+  }
+}
+
+function updateAnalysis(listingId, analysis) {
+  var section = document.getElementById("analysis-" + listingId);
+  if (!section) return;
+
+  /* Ensure image URLs are available for pada overlay */
+  if (analysis._image_urls && analysis._image_urls.length) {
+    _listingImages[listingId] = analysis._image_urls;
+  }
+
+  _analyzedCount++;
+  document.getElementById("stat-analyzed").textContent = _analyzedCount;
+
+  if (analysis.condition_score != null) {
+    _scores.push(analysis.condition_score);
+    var avg = (_scores.reduce(function(a,b){return a+b;},0) / _scores.length).toFixed(1);
+    document.getElementById("stat-avg-score").textContent = avg + "/10";
+  }
+
+  if (analysis.error && !analysis.condition_score) {
+    section.innerHTML = '<div style="color:var(--red);font-size:12px;">Analysis failed: ' +
+      analysis.error + '</div>';
+    return;
+  }
+
+  var score = analysis.condition_score || 0;
+  var cls = score >= 7 ? "good" : score >= 5 ? "fair" : "poor";
+
+  var vastuScore = analysis.vastu_score;
+  var vastuCls = vastuScore >= 7 ? "good" : vastuScore >= 5 ? "fair" : "poor";
+  var fengScore = analysis.feng_shui_score;
+  var fengCls = fengScore >= 7 ? "good" : fengScore >= 5 ? "fair" : "poor";
+
+  var findings = (analysis.findings || []).map(function(f) {
+    return '<li class="finding-item">' +
+      '<span class="severity-tag ' + f.severity + '">' + f.severity + '</span>' +
+      '<div><div style="font-size:11px;color:var(--text-muted);margin-bottom:1px;">[' + f.category + ']</div>' +
+      '<div>' + f.description + '</div>' +
+      (f.action ? '<div style="color:var(--text-muted);margin-top:2px;font-size:11px;">' +
+        f.action + '</div>' : '') +
+      '</div></li>';
+  }).join("");
+
+  var maint = analysis.estimated_maintenance || {};
+
+  section.innerHTML =
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">' +
+      '<div class="condition-badge ' + cls + '">Condition: ' + score + '/10</div>' +
+      (vastuScore != null ? '<div class="condition-badge ' + vastuCls + '">Vastu: ' + vastuScore + '/10</div>' : '') +
+      (fengScore != null ? '<div class="condition-badge ' + fengCls + '">Feng Shui: ' + fengScore + '/10</div>' : '') +
+    '</div>' +
+    '<div class="analysis-summary">' + (analysis.summary || '') + '</div>' +
+    (findings ? '<ul class="findings-list">' + findings + '</ul>' : '') +
+    (maint.low != null
+      ? '<div class="maintenance-estimate">Est. maintenance: <strong>$' +
+        (maint.low||0).toLocaleString() + ' \u2013 $' + (maint.high||0).toLocaleString() +
+        '</strong></div>'
+      : '') +
+    (analysis.estimated_buyer_cost && analysis.estimated_buyer_cost.low != null
+      ? '<div class="maintenance-estimate" style="margin-top:4px;">Est. total buyer cost: <strong>$' +
+        (analysis.estimated_buyer_cost.low||0).toLocaleString() + ' \u2013 $' +
+        (analysis.estimated_buyer_cost.high||0).toLocaleString() + '</strong>' +
+        (analysis.estimated_buyer_cost.notes
+          ? '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">' +
+            analysis.estimated_buyer_cost.notes + '</div>' : '') +
+        '</div>'
+      : '') +
+    (analysis.negotiation_price && analysis.negotiation_price.low != null
+      ? '<div class="maintenance-estimate" style="margin-top:4px;border-left:3px solid var(--green);">Negotiate at: <strong style="color:var(--green);">$' +
+        (analysis.negotiation_price.low||0).toLocaleString() + ' \u2013 $' +
+        (analysis.negotiation_price.high||0).toLocaleString() + '</strong>' +
+        (analysis.negotiation_price.reasoning
+          ? '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">' +
+            analysis.negotiation_price.reasoning + '</div>' : '') +
+        '</div>'
+      : '') +
+    (analysis.vastu_remedies && analysis.vastu_remedies.length
+      ? '<div style="margin-top:8px;font-size:12px;color:var(--text-muted);">' +
+        '<strong style="color:var(--yellow);">Vastu Remedies:</strong> ' +
+        analysis.vastu_remedies.join(" \u00b7 ") + '</div>'
+      : '') +
+    (analysis.feng_shui_cures && analysis.feng_shui_cures.length
+      ? '<div style="margin-top:6px;font-size:12px;color:var(--text-muted);">' +
+        '<strong style="color:var(--green);">Feng Shui Cures:</strong> ' +
+        analysis.feng_shui_cures.join(" \u00b7 ") + '</div>'
+      : '') +
+    renderPadaAnalysis(analysis.pada_analysis, listingId) +
+    (analysis.inspection_priorities && analysis.inspection_priorities.length
+      ? '<div style="margin-top:8px;font-size:12px;color:var(--text-muted);">' +
+        '<strong style="color:var(--text);">Inspect:</strong> ' +
+        analysis.inspection_priorities.join(" \u00b7 ") + '</div>'
+      : '') +
+    '<div style="margin-top:6px;font-size:10px;color:var(--text-muted);">' +
+      (analysis.images_analyzed || 0) + ' images analyzed</div>';
+}
+
+function renderPadaAnalysis(pada, listingId) {
+  if (!pada || !pada.is_south_facing) return '';
+
+  /* Build the entrance image with pada overlay — reversed: SW (left) to SE (right) */
+  var imgHtml = '';
+  var images = _listingImages[listingId] || [];
+  var imgIdx = (pada.entrance_image_index != null) ? pada.entrance_image_index : 0;
+  var padasArr = pada.all_padas || [];
+  var reversed = padasArr.slice().reverse();  /* 9,8,7...1 so SW is left, SE is right */
+  if (images[imgIdx]) {
+    var overlayCells = '';
+    for (var i = 0; i < reversed.length; i++) {
+      var p = reversed[i];
+      var oCls = p.auspicious ? 'good' : 'bad';
+      if (p.has_door) oCls += ' door';
+      overlayCells += '<div class="pada-overlay-cell ' + oCls + '">' +
+        '<span class="pada-num">' + p.number + '</span>' +
+        '<span class="pada-name">' + p.name + '</span>' +
+        '</div>';
+    }
+    imgHtml = '<div class="pada-image-wrap">' +
+      '<img src="' + images[imgIdx] + '" class="pada-entrance-img">' +
+      '<div class="pada-overlay-grid">' + overlayCells + '</div>' +
+      '<div class="pada-dir-labels">' +
+        '<span class="pada-dir-label left">SW</span>' +
+        '<span class="pada-dir-label right">SE</span>' +
+      '</div>' +
+    '</div>';
+  }
+
+  /* Build the small pada strip below — also reversed */
+  var cells = '';
+  for (var i = 0; i < reversed.length; i++) {
+    var p = reversed[i];
+    var cellCls = p.auspicious ? 'good' : 'bad';
+    if (p.has_door) cellCls += ' door';
+    cells += '<div class="pada-cell ' + cellCls + '">' +
+      '<span class="pada-num">' + p.number + '</span>' +
+      '<span class="pada-name">' + p.name + '</span>' +
+      '</div>';
+  }
+  var resultCls = pada.is_auspicious ? 'auspicious' : 'inauspicious';
+  var resultIcon = pada.is_auspicious ? '\u2714' : '\u2718';
+  return '<div class="pada-section">' +
+    '<div class="pada-title">South-Facing Vastu Pada Analysis</div>' +
+    imgHtml +
+    '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">SW \u2190 Padas 9\u20131 \u2192 SE</div>' +
+    '<div class="pada-grid">' + cells + '</div>' +
+    '<div class="pada-result ' + resultCls + '">' +
+      resultIcon + ' Door in Pada ' + pada.estimated_pada +
+      ' (' + pada.pada_name + ') \u2014 ' +
+      (pada.is_auspicious ? 'Auspicious' : 'Inauspicious') +
+      ': ' + (pada.effect || '') +
+    '</div>' +
+    '<div class="pada-confidence">Confidence: ' + (pada.confidence || 'N/A') +
+      (pada.notes ? ' \u2014 ' + pada.notes : '') + '</div>' +
+  '</div>';
+}
+
+function setPaused(isPaused) {
+  document.getElementById("btn-pause").textContent = isPaused ? "Resume" : "Pause";
+  setStatus(isPaused ? "Paused" : "Running");
+}
+
+function markDone(totalFound, totalAnalyzed) {
+  setStatus("Done \u2014 " + totalFound + " found, " + totalAnalyzed + " analyzed");
+  document.getElementById("btn-pause").disabled = true;
+  document.getElementById("btn-kill").disabled = true;
+}
+
+function markKilled() {
+  setStatus("Killed by user");
+  document.getElementById("btn-pause").disabled = true;
+  document.getElementById("btn-kill").disabled = true;
+}
+</script>
+</body>
+</html>

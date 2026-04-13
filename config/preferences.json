@@ -1,0 +1,19 @@
+{
+  "user_id": "u_001",
+  "locations": ["Carmel, IN"],
+  "budget": {
+    "min": 350000,
+    "max": 1500000
+  },
+  "property_types": ["house", "townhouse"],
+  "bedrooms_min": 4,
+  "bathrooms_min": 3,
+  "sqft_min": 3000,
+  "lot_sqft_min": 8000,
+  "must_haves": ["Elementary school must be College Wood Elementary or West Clay Elementary school"],
+  "deal_breakers": [],
+  "include_pending": false,
+  "style_notes": "",
+  "neighborhood_notes": "Elementary school must be College Wood Elementary or West Clay Elementary school",
+  "past_feedback": []
+}
